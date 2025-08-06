@@ -11,9 +11,9 @@ def write_df_with_metadata(ws, df, meta_dict):
         ws.cell(row=i + 1, column=2, value=str(v))
         ws.cell(row=i + 1, column=1).alignment = Alignment(horizontal="right")
 
-    # Write data starting at row 11
-    for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=True), start=11):
-        for c_idx, value in enumerate(row, start=1):
+    # Write data starting at row 1, col 4. the col 1 and 2 are used for metadata
+    for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=True), start=1):
+        for c_idx, value in enumerate(row, start=4):
             ws.cell(row=r_idx, column=c_idx, value=value)
 
 
@@ -34,11 +34,8 @@ def ds_to_excel(ds,excel_path):
             "Variable": var,
             "Dimensions": ", ".join(da.dims),
             "Shape": da.shape,
-            "Units": da.attrs.get("units", ""),
-            "Long Name": da.attrs.get("long_name", ""),
-            "Standard Name": da.attrs.get("standard_name", ""),
-            "Other Attributes": {k: v for k, v in da.attrs.items() if k not in ["units", "long_name", "standard_name"]}
-        }
+            **da.attrs,
+            **ds.attrs}
 
         if da.ndim == 0:
             scalars[var] = da.values.item()
@@ -47,7 +44,7 @@ def ds_to_excel(ds,excel_path):
         else:
             # Multi-D variable → new sheet
             df = da.to_dataframe().reset_index()
-            if len(df) > 10000:
+            if len(df) > 10000: #todo: top 10k rows
                 #if the file is too large, will only keep top 10k rows
                 df = df.iloc[:10000]
             ws = wb.create_sheet(title=var[:31])

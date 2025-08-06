@@ -4,3 +4,4 @@ cfgrib
 xarray
 netCDF4
 openpyxl
+eccodes
