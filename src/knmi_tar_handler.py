@@ -1,17 +1,20 @@
-import csv
 import tarfile
-import tempfile
 import os
-import cfgrib
 import numpy as np
 import pandas as pd
 
-from data_set_handler import ds_to_excel
-from eccodes import codes_grib_new_from_file,codes_get,codes_get_values,codes_release,codes_keys_iterator_new,codes_keys_iterator_next,codes_keys_iterator_delete,codes_keys_iterator_get_name,codes_get_array
+from eccodes import codes_grib_new_from_file,codes_get, codes_release,codes_keys_iterator_new,codes_keys_iterator_next,codes_keys_iterator_delete,codes_keys_iterator_get_name,codes_get_array
 
+from src.settings.KNMI_level_type import LevelType
+from src.settings.KNMI_time_range_indicator import TimeRangeIndicator
+from src.settings.knmi_parameters import HarmonieParameter
+
+known_keys={"indicatorOfParameter":HarmonieParameter ,
+            "indicatorOfTypeOfLevel":LevelType,
+            "timeRangeIndicator":TimeRangeIndicator}
 
 def access_grib_file(grib_file:str,csv_file:str,value_keys:list,excluded:list):
-    with open(grib_file, "rb") as f:
+    with (open(grib_file, "rb") as f):
         while True: #loop over gid message from file
             gid = codes_grib_new_from_file(f)  # Get next GRIB message
             if gid is None:
@@ -25,13 +28,21 @@ def access_grib_file(grib_file:str,csv_file:str,value_keys:list,excluded:list):
                     key = codes_keys_iterator_get_name(it)
                     # print(key)
                     try:
+                        #exclude some keys
                         if key in value_keys or key in excluded:
                             continue
                         try:
                             value = codes_get(gid, key)
+
+                            #map some keys to string
+                            try:
+                                if key in known_keys:
+                                    metadata[f"{key}_str"] =known_keys[key].id_to_description()[int(value)]
+                            except:
+                                metadata[f"{key}_str"]=value
                         except:
                             value = codes_get_array(gid, key)
-                            print(f"meta {key} has {len(value)} values")
+                            # print(f"meta {key} has {len(value)} values")
                         if isinstance(value,(int,float,str)):
                             metadata[key] = value
                         elif isinstance(value,np.ndarray):
@@ -50,16 +61,22 @@ def access_grib_file(grib_file:str,csv_file:str,value_keys:list,excluded:list):
                 # Clean up
                 codes_keys_iterator_delete(it)
 
+                # only for KNMI: there's a 'value' column and we need to rename it into indicators
+                parameter_name = HarmonieParameter.id_to_name()[metadata['indicatorOfParameter']]
+
                 #write meta
-                pd.DataFrame({k: pd.Series(v) for k, v in metadata.items()}).T.to_csv(f"{csv_file}_{gid}_meta.csv")
+                meta_df=pd.DataFrame({k: pd.Series(v) for k, v in metadata.items()}).T
+                meta_df_sorted= meta_df.sort_index()
+                meta_df_sorted.to_csv(f"{csv_file}_{gid}_meta_{parameter_name}.csv")
 
                 # Get actual data values separately
                 data = {}
                 for col in value_keys:
                     data[col] = codes_get_array(gid,col)
-                pd.DataFrame(data).to_csv(f"{csv_file}_{gid}_data.csv")
 
-                print('all written')
+                pd.DataFrame(data).rename(columns={'values':metadata['indicatorOfParameter_str']}).to_csv(f"{csv_file}_{gid}_data_{parameter_name}.csv")
+
+                # print('all written')
             except Exception as e:
                 print(f"error {e}")
 
@@ -90,8 +107,9 @@ def access_tar(tarname,path):
 
 if __name__ == "__main__":
     #read tar
-    path= "./knmi_data/Harmonie-Arome_cy43/EPS Meteorological params"
+    path= "knmi_data/Harmonie-Arome_cy43/EPS Meteorological params"
     for tar_file in os.listdir(path):
         if tar_file.endswith(".tar"):
             access_tar(tar_file,path)
 
+    print("all tar file processed")
